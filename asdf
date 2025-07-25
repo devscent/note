@@ -1,44 +1,19 @@
-MSSQL 한계 극복
+PostgreSQL (DBMS) – 선정
+ · 기존 MSSQL의 비용·확장 한계를 해소할 대안으로 전환 결정
+ · 전략 부합성 및 기술 타당성 검토 완료
 
-현 시스템은 MS SQL Server(코어 라이선스, Windows 기반)로 운영 → 대규모 Scale‑up/Scale‑out 시 비용·플랫폼 제약이 큼
+pgloader (마이그레이션 도구) – 도입가능
+ · 초기 데이터 이관용 도구로 기능 검토 및 테스트 완료
+ · 향후 CDC 연계 가능성 고려 중
 
-PostgreSQL로 전환하면 라이선스 비 부담 없고 리눅스·컨테이너 환경에서 자유롭게 확장 가능
+Logical Replication (읽기 분산 구조) – 도입가능
+ · 외부 연계/조회 트래픽을 분산하기 위한 리플리카 구성 예정
+ · 운영 안정성과 성능 확보 목적
 
-전략 부합 + 확장성
+Prometheus + Grafana (관제 스택) – 도입가능
+ · PostgreSQL 상태/성능 실시간 모니터링용 도입 검토 완료
+ · 대시보드 및 exporter 테스트 완료
 
-데이터 중심 운영 고도화·연계 통합·클라우드 전환 전략에 맞춰 Scale‑up/Scale‑out 모두 지원
-
-Logical Replication, FDW 등으로 공정별 분산·통합 구조를 유연하게 설계
-
-오픈소스 생태계 연계
-
-Python, Airflow, Grafana 등과의 분석·관제 통합이 우수
-
-plpythonu 같은 확장으로 DB 내부 Python 로직 실행 → 가공 Job 내재화 및 운영 효율 강화
-
-
-현 MSSQL 환경의 비용·제약 극복
-
-운영 DB는 MS SQL Server Standard 에디션으로, VM 할당 vCPU마다 코어 라이선스 비용이 지속 발생
-
-Windows 기반 운영·패치, 엔터프라이즈급 스케일‑아웃 기능 부재로 성능·플랫폼 제약이 커짐
-
-PostgreSQL 전환 시 라이선스 0 원, 리눅스·컨테이너 기반으로 플랫폼 선택권·운영 자동화 확대
-
-전략 부합성과 확장 유연성
-
-데이터 중심 운영 고도화 / 서비스 연계 통합 / 클라우드·Kubernetes 전환 등 전사 전략에 직접 부합
-
-단일 노드 고성능 Scale‑up → 추후 FDW·Citus·Logical Replication으로 공정·설비 단위 샤딩 및 읽기 리플리카 Scale‑out까지 단계적 확장 가능
-
-오픈소스 생태계 연동 우수
-
-Python(pandas, SQLAlchemy), Jupyter, Airflow, Kafka 등과 네이티브 연동
-
-내부 분석·가공 로직은 plpythonu, plpgsql 등으로 DB 내부 함수화 가능 → ETL/가공 Job 내재화·자동화
-
-운영·모니터링 친화성
-
-Prometheus exporter, Grafana 대시보드, pgBadger 로그 분석 등 오픈 모니터링 체계 활용으로 실시간 성능 가시화
-
-VM 자원 부족·병목 탐지가 용이하고, 장애 전파 차단(읽기 리플리카, PITR 복구) 기능 내장 → 운영 안정성 높음
+Debezium + Kafka (CDC 스트리밍) – 미선정
+ · 실시간 데이터 연계용 후보 솔루션
+ · 현재 구성 복잡성 및 운영 부담으로 우선순위는 낮음
