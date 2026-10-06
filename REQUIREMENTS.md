@@ -330,7 +330,7 @@ groups:
 
 - **C44** 문구는 사실 전달형으로 짧게 쓴다. **광고 문구나 슬로건형 표현은 쓰지 않는다.** 예: "일상의 사용 흐름에서 기능과 사용자까지, 한눈에 살펴보세요" ✗ → 페이지 제목 + "그날 MARS 기능 조회를 1회 이상 한 사용자 수" ✓
 - **C45** 모든 지표 라벨 옆에 (?) 아이콘을 두고, 클릭/hover 시 `glossary`의 정의를 보여준다(`MetricHelp` 컴포넌트). 정의 원문은 부록 A이다.
-- **C46** 헤더 배지 1: `데이터 기준: 2026-09-28까지 집계 · 갱신 09-29 06:10 (Asia/Seoul)`(날짜는 설정 형식, 시각은 24시간제). `usp_Usage_Freshness` 값을 쓰고, 없으면 `meta.today − 1`을 쓴다.
+- **C46** 헤더 배지 1: `데이터 기준: 2026-09-28까지 집계 · 갱신 09-29 06:10 (Asia/Seoul)`(날짜는 설정 형식, 시각은 24시간제). `UsageInsights_Freshness` 값을 쓰고, 없으면 `meta.today − 1`을 쓴다.
 - **C47** 헤더 배지 2: 가상 데이터일 때 항상 `샘플 데이터`를 표시한다(CSV 파일명에도 `_sample`).
 - **C48** 기능별 사용자 수의 합은 전체 이용자 수보다 클 수 있다(한 사람이 여러 기능 사용). 해당 화면에 툴팁으로 설명한다.
 
@@ -391,7 +391,7 @@ groups:
 ### 11.2 DAU (P0)
 
 **설명 한 줄**: 그날 MARS 기능 조회를 1회 이상 한 사용자 수.
-**데이터**: `usp_Usage_Dau`. 일별 행에 날짜, 요일, 이용자 수, 휴일 여부, 휴일명이 있다. 규모는 대략 100~150이다.
+**데이터**: `UsageInsights_Dau`. 일별 행에 날짜, 요일, 이용자 수, 휴일 여부, 휴일명이 있다. 규모는 대략 100~150이다.
 
 **구성**
 1. 필터: 기간, 휴일 제외 스위치(기본 ON), 7일 이동평균 체크(기본 OFF)
@@ -411,12 +411,12 @@ groups:
 ### 11.3 MAU · WAU (P0)
 
 **설명 한 줄**: 최근 30일(MAU)·7일(WAU) 동안 MARS 기능 조회를 1회 이상 한 사용자 수.
-**데이터**: 롤링 `usp_Usage_ActiveRolling`(기준일별 MAU·WAU 동시), 캘린더 `usp_Usage_ActiveCalendar`(주/월별). MAU는 1000~1500, WAU는 300~500 규모다.
+**데이터**: 롤링 `UsageInsights_ActiveRolling`(기준일별 MAU·WAU 동시), 캘린더 `UsageInsights_ActiveCalendar`(주/월별). MAU는 1000~1500, WAU는 300~500 규모다.
 
 **구성**
 1. 필터: 기간, **기준 토글(롤링 | 캘린더)** — 기본 롤링, MAU·WAU 공통 [제안]. 이 화면에는 휴일 제외 옵션이 없다.
 2. **MAU 차트**(메인, 크게)와 **WAU 차트**(작게)를 분리해서 위아래로 배치한다(스케일 차이). 각 차트 위에 카드(평균/최대/최소/최근값/이전 대비)를 둔다. 각각 조회 기간 평균선과 줌을 가진다.
-3. **고착도 차트**(P1, 롤링 기준에서만): DAU÷MAU, WAU÷MAU를 % 선 두 개로 표시한다. 이 차트에만 휴일 제외 토글(기본 ON)을 둔다. DAU는 `usp_Usage_Dau` 결과와 날짜로 결합한다 [제안].
+3. **고착도 차트**(P1, 롤링 기준에서만): DAU÷MAU, WAU÷MAU를 % 선 두 개로 표시한다. 이 차트에만 휴일 제외 토글(기본 ON)을 둔다. DAU는 `UsageInsights_Dau` 결과와 날짜로 결합한다 [제안].
 4. **표**: 롤링은 `기준일 | MAU | WAU` 한 표, 캘린더는 월/주 탭 각각의 표다.
 
 **롤링 기준**
@@ -444,7 +444,7 @@ groups:
 
 MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 이용자와 최근 N일 이용자를 함께 보여줘서 실제 이용자 규모를 추정하게 한다. 화면에서는 "가입자" 대신 **"신규 이용자(최초 접속)"** 로 표기한다.
 
-**데이터**: `usp_Usage_UserBase`(누적, 90/180/365일), `usp_Usage_NewUsersDaily`.
+**데이터**: `UsageInsights_UserBase`(누적, 90/180/365일), `UsageInsights_NewUsersDaily`.
 
 **구성**
 1. **카드 5개** (기준일 = 어제, 휴일 제외와 무관): 누적 이용자 / 최근 365일 / 최근 180일 / 최근 90일 이용자 / 휴면 추정 비율(= 1 − 365일 이용자 ÷ 누적). 각 카드에 누적 대비 %를 표시하고 (?)에 "1년 이상 접속 기록이 없으면 휴면으로 보는 기준이며, 더 엄격한 기준으로 90/180일도 함께 본다"를 설명한다.
@@ -463,7 +463,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 ### 11.5 체류시간 (P0)
 
 **설명 한 줄**: 그날 사용자들의 평균 체류시간. (산출 방식 한 줄은 자리표시 문구로 두고 담당자가 수정: "세션 기준으로 …")
-**데이터**: `usp_Usage_StayTimeDaily`. 일별 평균 체류시간(초), 선택적으로 중앙값(초), 그날의 이용자 수, 휴일 정보.
+**데이터**: `UsageInsights_StayTimeDaily`. 일별 평균 체류시간(초), 선택적으로 중앙값(초), 그날의 이용자 수, 휴일 정보.
 
 - DAU 화면과 같은 구성이다: 필터(기간, 휴일 제외 기본 ON, 7일 이동평균), 카드, 평균선이 있는 라인 차트, 줌, 표.
 - 표시 단위는 분(소수 1자리)이며 서식은 `formatDuration` 한 곳에서 관리한다. 기간 평균은 "일별 평균의 단순 평균"이라고 (?)에 밝힌다.
@@ -476,7 +476,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 ### 11.6 기능별 사용현황 (P0)
 
-**데이터**: `usp_Usage_Features`(기능 ID, 이름(ko/en), 사용자 수, 조회 수, 이전 기간 값), `usp_Usage_PeriodSummary`(도달률 분모), 상세용 SP 4종(§13). 기간은 기본 1년이며 오늘은 제외한다(C10).
+**데이터**: `UsageInsights_Features`(기능 ID, 이름(ko/en), 사용자 수, 조회 수, 이전 기간 값), `UsageInsights_PeriodSummary`(도달률 분모), 상세용 SP 4종(§13). 기간은 기본 1년이며 오늘은 제외한다(C10).
 
 **목록 화면**
 - 필터: 기간. 정렬 세그먼트 컨트롤(1클릭 전환): **사용자 수(기본) | 조회 수 | 증감**. 열 머리를 눌러도 정렬된다. [미결: "사용자수 조회수 기준보다 더 중요하다"를 "사용자 수가 조회 수보다 중요"로 해석함]
@@ -500,7 +500,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 ### 11.7 유저별 사용현황 (P0, 권한 `usage.users.view`)
 
-**데이터**: `usp_Usage_Users`(사용자별 사용일수, 조회 수, 사용 메뉴 수), 상세용 SP 3종. 순위는 프론트에서 계산한다(전체 목록 1회 조회 후 정렬 기준 전환 시 재조회 없음).
+**데이터**: `UsageInsights_Users`(사용자별 사용일수, 조회 수, 사용 메뉴 수), 상세용 SP 3종. 순위는 프론트에서 계산한다(전체 목록 1회 조회 후 정렬 기준 전환 시 재조회 없음).
 
 **순위 화면**
 - 필터: 기간, 정렬 세그먼트 컨트롤 **사용일수(기본) | 조회 수 | 사용 메뉴 수** (중요도 순). 클릭 한 번으로 바뀌고 기준 열이 강조된다.
@@ -530,8 +530,8 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 ### 11.8 후속 후보 (P2, 이번엔 메뉴 자리와 SP 명세만)
 
-- **리텐션 코호트 히트맵**: 신규 이용자를 주(월) 코호트로 묶어 N주 후 재방문율을 본다. `usp_Usage_RetentionCohorts(@from_date, @to_date, @unit)` → `cohort_start`, `cohort_size`, `period_offset`, `retained_users`.
-- **월 사용일수 분포**: 1일 / 2~5일 / 6~10일 / 11일 이상 이용자 비율(라이트~헤비 구성). `usp_Usage_ActiveDaysDistribution(@month_start)` → `bucket`, `users`.
+- **리텐션 코호트 히트맵**: 신규 이용자를 주(월) 코호트로 묶어 N주 후 재방문율을 본다. `UsageInsights_RetentionCohorts(@from_date, @to_date, @unit)` → `cohort_start`, `cohort_size`, `period_offset`, `retained_users`.
+- **월 사용일수 분포**: 1일 / 2~5일 / 6~10일 / 11일 이상 이용자 비율(라이트~헤비 구성). `UsageInsights_ActiveDaysDistribution(@month_start)` → `bucket`, `users`.
 
 ### 11.9 MARS DB 탐색 (자리표시자)
 
@@ -587,26 +587,26 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 | # | SP | 파라미터 | 결과 |
 |---|---|---|---|
-| 1 | `usp_Usage_Dau` | `@from_date`, `@to_date` | `stat_date date`, `iso_weekday`, `active_users int`, **[H]** |
-| 2 | `usp_Usage_ActiveRolling` | `@from_date`, `@to_date` | `stat_date`(기준일), `wau_7d int`, `mau_30d int` — 기준일 포함 과거 7/30일 고유 사용자 |
-| 3 | `usp_Usage_ActiveCalendar` | `@unit char(1)`(`W`/`M`), `@from_date`, `@to_date` | `start_date`, `end_date`(주: 월~일, 월: 1일~말일, 진행 중이어도 실제 달력 종료일), `active_users` — 조회 기간과 **겹치는** 기간을 모두 반환 (라벨·포함 규칙은 앱이 처리) |
-| 4 | `usp_Usage_UserBase` | `@as_of_date` (=어제) | `total_users`, `active_90d`, `active_180d`, `active_365d` — 창은 `[as_of−N+1, as_of]` |
-| 5 | `usp_Usage_NewUsersDaily` | `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `new_users`(전체 이력상 처음 접속한 사용자), `cumulative_users`, **[H]** |
-| 6 | `usp_Usage_StayTimeDaily` | `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `avg_stay_sec int`, `median_stay_sec int NULL`, `active_users`, **[H]** |
-| 7 | `usp_Usage_PeriodSummary` | `@from_date`, `@to_date` | `active_users`(기간 내 고유 사용자), `total_views` |
-| 8 | `usp_Usage_Features` | `@from_date`, `@to_date`, `@compare_from`, `@compare_to`(NULL 허용) | `feature_id varchar(50)`, **[N(name)]**, `users`, `views`, `prev_users NULL`, `prev_views NULL` |
-| 9 | `usp_Usage_FeatureSummary` | `@feature_id`, `@from_date`, `@to_date` | `users`, `views`, `first_used_date`, `last_used_date`(전체 이력), `new_users`(기간 내 이 기능을 처음 쓴 사용자), `returning_users` |
-| 10 | `usp_Usage_FeatureDaily` | `@feature_id`, `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `users`, `views`, **[H]** |
-| 11 | `usp_Usage_FeatureDepartments` | `@feature_id`, `@from_date`, `@to_date` | `dept_id`, **[N(dept)]**, `users`, `views` |
-| 12 | `usp_Usage_FeatureTopUsers` | `@feature_id`, `@from_date`, `@to_date`, `@top int` | `user_id`, `user_name`, `dept_id`, **[N(dept)]**, `active_days`, `views` |
-| 13 | `usp_Usage_Departments` | `@from_date`, `@to_date` | `dept_id`, **[N(dept)]**, `active_users`, `views`, `headcount int NULL` |
-| 14 | `usp_Usage_Users` | `@from_date`, `@to_date` | `user_id`, `user_name`, `dept_id NULL`, **[N(dept)]**, `active_days`, `views`, `menus`(사용한 서로 다른 기능 수) — 기간 내 사용 기록이 있는 사용자 전체 |
-| 15 | `usp_Usage_UserSummary` | `@user_id`, `@from_date`, `@to_date` | `user_id`, `user_name`, `dept_id`, **[N(dept)]**, `active_days`, `views`, `menus`, `first_active_date`(전체 이력), `last_active_date`, `longest_streak_days`(기간 내, 휴일은 연속을 끊지 않음) |
-| 16 | `usp_Usage_UserDaily` | `@user_id`, `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `views`, **[H]** — 기간의 모든 날짜 행 |
-| 17 | `usp_Usage_UserFeatures` | `@user_id`, `@from_date`, `@to_date` | `feature_id`, **[N(name)]**, `active_days`, `views` |
-| 18 | `usp_Usage_Freshness` | 없음 | `data_through_date date`, `last_updated_at datetime` |
-| P2 | `usp_Usage_RetentionCohorts` | `@from_date`, `@to_date`, `@unit` | `cohort_start`, `cohort_size`, `period_offset`, `retained_users` |
-| P2 | `usp_Usage_ActiveDaysDistribution` | `@month_start` | `bucket`, `users` |
+| 1 | `UsageInsights_Dau` | `@from_date`, `@to_date` | `stat_date date`, `iso_weekday`, `active_users int`, **[H]** |
+| 2 | `UsageInsights_ActiveRolling` | `@from_date`, `@to_date` | `stat_date`(기준일), `wau_7d int`, `mau_30d int` — 기준일 포함 과거 7/30일 고유 사용자 |
+| 3 | `UsageInsights_ActiveCalendar` | `@unit char(1)`(`W`/`M`), `@from_date`, `@to_date` | `start_date`, `end_date`(주: 월~일, 월: 1일~말일, 진행 중이어도 실제 달력 종료일), `active_users` — 조회 기간과 **겹치는** 기간을 모두 반환 (라벨·포함 규칙은 앱이 처리) |
+| 4 | `UsageInsights_UserBase` | `@as_of_date` (=어제) | `total_users`, `active_90d`, `active_180d`, `active_365d` — 창은 `[as_of−N+1, as_of]` |
+| 5 | `UsageInsights_NewUsersDaily` | `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `new_users`(전체 이력상 처음 접속한 사용자), `cumulative_users`, **[H]** |
+| 6 | `UsageInsights_StayTimeDaily` | `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `avg_stay_sec int`, `median_stay_sec int NULL`, `active_users`, **[H]** |
+| 7 | `UsageInsights_PeriodSummary` | `@from_date`, `@to_date` | `active_users`(기간 내 고유 사용자), `total_views` |
+| 8 | `UsageInsights_Features` | `@from_date`, `@to_date`, `@compare_from`, `@compare_to`(NULL 허용) | `feature_id varchar(50)`, **[N(name)]**, `users`, `views`, `prev_users NULL`, `prev_views NULL` |
+| 9 | `UsageInsights_FeatureSummary` | `@feature_id`, `@from_date`, `@to_date` | `users`, `views`, `first_used_date`, `last_used_date`(전체 이력), `new_users`(기간 내 이 기능을 처음 쓴 사용자), `returning_users` |
+| 10 | `UsageInsights_FeatureDaily` | `@feature_id`, `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `users`, `views`, **[H]** |
+| 11 | `UsageInsights_FeatureDepartments` | `@feature_id`, `@from_date`, `@to_date` | `dept_id`, **[N(dept)]**, `users`, `views` |
+| 12 | `UsageInsights_FeatureTopUsers` | `@feature_id`, `@from_date`, `@to_date`, `@top int` | `user_id`, `user_name`, `dept_id`, **[N(dept)]**, `active_days`, `views` |
+| 13 | `UsageInsights_Departments` | `@from_date`, `@to_date` | `dept_id`, **[N(dept)]**, `active_users`, `views`, `headcount int NULL` |
+| 14 | `UsageInsights_Users` | `@from_date`, `@to_date` | `user_id`, `user_name`, `dept_id NULL`, **[N(dept)]**, `active_days`, `views`, `menus`(사용한 서로 다른 기능 수) — 기간 내 사용 기록이 있는 사용자 전체 |
+| 15 | `UsageInsights_UserSummary` | `@user_id`, `@from_date`, `@to_date` | `user_id`, `user_name`, `dept_id`, **[N(dept)]**, `active_days`, `views`, `menus`, `first_active_date`(전체 이력), `last_active_date`, `longest_streak_days`(기간 내, 휴일은 연속을 끊지 않음) |
+| 16 | `UsageInsights_UserDaily` | `@user_id`, `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `views`, **[H]** — 기간의 모든 날짜 행 |
+| 17 | `UsageInsights_UserFeatures` | `@user_id`, `@from_date`, `@to_date` | `feature_id`, **[N(name)]**, `active_days`, `views` |
+| 18 | `UsageInsights_Freshness` | 없음 | `data_through_date date`, `last_updated_at datetime` |
+| P2 | `UsageInsights_RetentionCohorts` | `@from_date`, `@to_date`, `@unit` | `cohort_start`, `cohort_size`, `period_offset`, `retained_users` |
+| P2 | `UsageInsights_ActiveDaysDistribution` | `@month_start` | `bucket`, `users` |
 
 `docs/SP_SPEC.md`에는 각 SP의 결과 컬럼(타입, NULL 여부, 정렬)과 함께 샘플 결과 3~5행, 예외 규칙, 성능 유의점(인덱스 후보)을 채운다.
 
