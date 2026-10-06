@@ -1,8 +1,9 @@
 # MARS 관리자 웹사이트 요구사항 명세
 
-버전 1.5 · 2026-10-07 · 대상 독자: 구현을 맡을 AI 코딩 에이전트(Claude Code, Codex, Cursor 등), 프로젝트 담당자(검토)
+버전 1.6 · 2026-10-07 · 대상 독자: 구현을 맡을 AI 코딩 에이전트(Claude Code, Codex, Cursor 등), 프로젝트 담당자(검토)
 
 **변경 이력**
+- 1.6 (2026-10-07): 백엔드의 Site별 DB 직접 연결을 중앙 SQL Server 단일 접속 + Site별 Linked Server 원격 SP 호출로 변경
 - 1.5 (2026-10-07): 현재 범위 SP 18개를 8개로 통합, 조회 유형별 파라미터·반환 계약 및 API 매핑 정의. API 경로·응답·권한 구분은 유지
 - 1.4 (2026-10-02): 문서 위치를 `docs/`로 이동, 디렉터리 구조를 저장소 루트 기준으로 수정
 - 1.3 (2026-10-02): 날짜 형식 기본값을 자동 → `YYYY-MM-DD`로 변경
@@ -53,6 +54,7 @@ MARS 관리자 웹사이트는 여러 관리 기능을 모듈로 담는 포털�
 | SSO | OIDC. 이름·부서·ID는 토큰 클레임에서 받음. 자체 ID/PW 없음 |
 | 권한 | ①메뉴 접근 ②Site 접근, 두 축. IdP 그룹 클레임 → 권한 매핑. 모든 API에서 서버가 검사. "유저별 사용현황"은 별도 권한 |
 | Site | 4개 (한국 2, 중국 1, 미국 텍사스 오스틴 1). Site별로 조회하고 섞어 보지 않음 |
+| DB 연결 | 백엔드는 중앙 SQL Server의 고정 접속정보만 사용. Site별 Linked Server·DB 매핑으로 `[linked_server].[database].[schema].[SP]` 호출 |
 | 시간 | 각 Site DB는 타임존 없는 datetime(현지 시각). "오늘" = 해당 Site 현지 날짜 |
 | 휴일 | SP가 날짜별 `is_holiday` + 휴일명을 제공(공휴일 + 회사 휴일). 토·일을 휴일로 가정하지 않음 |
 | 언어 | 한국어·영어. 화면 문구는 번역 파일, 부서·기능·휴일명은 SP가 언어별로 제공 + 보충 매핑 파일 |
@@ -87,20 +89,44 @@ MARS 관리자 웹사이트는 여러 관리 기능을 모듈로 담는 포털�
 ```
 Browser (React) ──/api──▶ FastAPI ──▶ UsageProvider (인터페이스)
                                       ├─ MockProvider   (DATA_SOURCE=mock)
-                                      └─ MssqlProvider  (DATA_SOURCE=mssql) ──▶ Site별 MSSQL (SP만 호출)
+                                      └─ MssqlProvider  (DATA_SOURCE=mssql)
+                                             │ 고정된 중앙 DB 접속정보
+                                             ▼
+                                      중앙 SQL Server
+                                             │ Site에 매핑된 Linked Server로 원격 SP 호출
+                                             ▼
+                                      선택한 Site의 MSSQL DB
 ```
 
 **백엔드 규칙**
 - 라우터는 Provider 인터페이스만 안다. `MockProvider`와 `MssqlProvider`는 같은 메서드·같은 반환 모델(pydantic)을 갖는다. 실데이터 연결 시 수정 범위는 `MssqlProvider`와 설정뿐이어야 한다.
 - 테이블을 직접 쿼리하지 않고 SP만 호출한다. `sp_registry` 한 곳에서 논리 조회별 SP 이름, 고정 조회 유형(`@metric`/`@basis`/`@view`), 허용 파라미터와 결과 모델을 관리한다(§13). Provider 메서드는 논리 조회별로 유지하며 여러 메서드가 같은 통합 SP를 호출할 수 있다.
+- 백엔드는 모든 Site에 대해 동일한 중앙 SQL Server 접속정보(`MSSQL_CONNECTION_STRING`)를 사용한다. Site 선택 시 연결 문자열·접속 IP·기본 접속 DB를 바꾸지 않고, §6의 매핑으로 원격 SP의 4부분 이름을 선택한다. 중앙 접속정보는 환경변수로만 관리하고 원격 Site의 인증정보는 중앙 SQL Server의 Linked Server 로그인 매핑으로 관리한다.
 - pyodbc는 동기이므로 스레드풀에서 실행한다. 쿼리 타임아웃(`SP_TIMEOUT_SECONDS`, 기본 30)을 둔다.
 - **동일 요청 합치기(single-flight)**: 같은 Site·SP·파라미터의 동시 요청은 SP를 한 번만 실행하고 결과를 공유한다.
-- **TTL 캐시**: 오늘을 포함하지 않는 범위는 30분, 오늘을 포함하는 범위는 2분(설정값). 키는 (source, site, SP, 파라미터).
+- **TTL 캐시**: 오늘을 포함하지 않는 범위는 30분, 오늘을 포함하는 범위는 2분(설정값). 키는 (source, site, 호출 대상, 파라미터). 실데이터의 호출 대상에는 Linked Server·DB·스키마·SP를 포함한다.
 - **동시 실행 제한**: Site별 세마포어(기본 4). 초과분은 대기하다가 타임아웃 시 429.
 - 클라이언트가 연결을 끊었을 때 SP 실행을 중단하지 못할 수 있으므로, 위 캐시·합치기·타임아웃·동시성 제한으로 DB 부하를 막는다.
-- DB 계정은 해당 SP의 EXECUTE 권한만 가진다.
+- 중앙 DB 접속 계정은 필요한 접속 및 Linked Server 로그인 매핑을 사용하도록 구성한다. 원격 Site에 매핑된 계정은 해당 조회 SP의 EXECUTE 권한만 가지며, 앱 계정에는 Linked Server 생성·변경 권한을 주지 않는다. 실제 원격 SP 권한은 각 Site DB에서 검사한다.
 - 모든 응답은 `meta`를 포함한다: `site`, `timezone`, `today`(Site 현지 날짜), `from`, `to`, `generated_at`, `source`(`mock`/`mssql`), `cached`.
 - 오류는 `{code, message, request_id}` 형식이다. 상태 코드는 400(검증), 401, 403, 429, 504(타임아웃), 502/500이다.
+
+**Linked Server 호출 규칙**
+
+- 백엔드가 중앙 SQL Server 연결에서 `EXEC [linked_server].[database].[schema].[SP]`를 실행하면 중앙 SQL Server가 선택한 Site에 원격 호출을 전달한다. 조회 로직은 각 Site DB에 배포된 SP에서 실행하며 결과를 중앙 서버를 거쳐 반환한다. 중앙 DB에 8개 SP의 복사본이나 Site 분기용 래퍼 SP를 추가할 필요는 없다.
+- Site 접근 권한을 먼저 검사한 뒤 서버 설정의 허용 목록에서 `linked_server`, `database`, `schema`를 선택하고, SP 이름은 `sp_registry`에서 선택한다. 이 식별자들은 클라이언트 입력을 그대로 붙이거나 `?` 값 파라미터로 넘기지 않는다. 검증된 설정값만 SQL Server 식별자 규칙에 맞춰 각각 대괄호로 감싸고 내부 `]`를 이스케이프한다. 날짜·조회 유형·사용자 ID 등 **값은 pyodbc 파라미터 바인딩**으로 전달한다.
+- 읽기 전용 SP 호출은 `autocommit=True`로 수행하고 명시적 로컬 트랜잭션으로 감싸지 않는다. 향후 트랜잭션이 필요한 호출을 추가할 때는 원격 프로시저의 트랜잭션 승격 및 MSDTC 구성을 별도로 검토한다. 앱이 서버의 트랜잭션 옵션을 임의로 변경하지 않는다.
+- 중앙 SQL Server에는 담당자가 Site별 Linked Server, 원격 로그인 매핑, `RPC OUT`을 구성한다. 중앙 서버에서 원격 Site까지의 네트워크·SQL Server용 OLE DB 공급자·연결 설정도 담당자가 확인한다. 백엔드의 ODBC Driver와 중앙 서버의 Linked Server 공급자는 별개다.
+- Site별 동시 실행 제한·캐시·타임아웃을 유지한다. 중앙 서버와 원격 서버 간 연결·조회 타임아웃도 함께 확인하며, 특정 Site 오류 시 다른 Site로 대체 조회하지 않는다. 중앙 SQL Server 장애는 모든 Site 조회에 영향을 주므로 통합 부하와 장애 동작을 검증한다.
+
+호출 예시(`LS_KR1`은 가상 Linked Server 이름, 날짜·조회 유형은 설명용 값):
+
+```sql
+EXEC [LS_KR1].[MARSPrimeDB].[dbo].[UsageInsights_Daily]
+    @metric = 'dau',
+    @from_date = '2026-09-01',
+    @to_date = '2026-09-30';
+```
 
 **프론트엔드 규칙**
 - 서버 상태는 TanStack Query만 쓴다. `queryKey`에 모든 파라미터(source 포함)를 넣고, `signal`로 fetch를 취소한다.
@@ -167,7 +193,16 @@ groups:
 
 ## 6. Site·시간 규칙
 
-- `config/sites.yaml`에서 Site를 관리한다: `id`, 이름(ko/en), `timezone`(IANA), `data_start_date`, DB 접속정보를 가리키는 환경변수명. 초기 가정값은 `KR1`, `KR2`, `CN1`, `US1`(오스틴, `America/Chicago`)이다 [미결: 실제 ID·이름].
+- `config/sites.yaml`에서 Site를 관리한다: `id`, 이름(ko/en), `timezone`(IANA), `data_start_date`, `linked_server`, `database`, `schema`. Site별 IP·연결 문자열·DB 인증정보는 두지 않는다. 초기 가정값은 `KR1`, `KR2`, `CN1`, `US1`(오스틴, `America/Chicago`)이다 [미결: 실제 ID·이름·Linked Server 매핑].
+- 원격 호출 대상 예시는 아래와 같다. `LS_*`는 가상 이름이고 `MARSPrimeDB`·`dbo`는 제시된 이름을 바탕으로 한 가정값이다. 실제 값은 담당자가 연결 전에 확정한다. 매핑은 서버에서만 관리하고 `/sites` API에는 노출하지 않는다.
+
+| Site | `linked_server` | `database` | `schema` |
+|---|---|---|---|
+| KR1 | `LS_KR1` | `MARSPrimeDB` | `dbo` |
+| KR2 | `LS_KR2` | `MARSPrimeDB` | `dbo` |
+| CN1 | `LS_CN1` | `MARSPrimeDB` | `dbo` |
+| US1 | `LS_US1` | `MARSPrimeDB` | `dbo` |
+
 - Site는 앱 최상위 조건이다. 헤더에 Site 선택기를 두고 경로에 포함한다(`/usage/:siteId/...`). Site를 바꾸면 같은 화면·같은 조건을 유지한 채 그 Site 데이터로 전환한다. 캐시는 Site별로 분리한다.
 - **"오늘"은 서버가 `meta.today`로 내려주는 Site 현지 날짜다.** 백엔드는 Site의 `timezone`(zoneinfo)으로 계산한다. 브라우저 시계로 오늘을 판단하지 않는다.
 - 프론트는 날짜를 `YYYY-MM-DD` 문자열로만 다룬다. `new Date('2026-09-29')`는 UTC로 해석되어 하루가 밀리므로 금지한다. 날짜 연산은 자체 유틸(문자열 ↔ 연·월·일 정수)로 하고 테스트한다.
@@ -590,7 +625,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 ### 13.2 공통 규칙
 
-- 4개 Site DB에 **같은 SP 이름·파라미터·조회 유형별 결과 계약**으로 배포한다. Site는 SP 파라미터가 아니라 연결(DB)로 구분한다.
+- 4개 Site DB에 **같은 SP 이름·파라미터·조회 유형별 결과 계약**으로 배포한다. 백엔드는 중앙 SQL Server의 동일한 연결 설정을 사용하고, Site는 SP 파라미터가 아니라 §6의 Linked Server·DB 매핑으로 구분한다. 아래 SP 이름 앞에 해당 Site의 `[linked_server].[database].[schema]`를 붙여 호출한다(§4).
 - 날짜 파라미터와 결과는 `date` 타입이며 해당 Site 현지 날짜 기준이다. 시각 컬럼은 타임존 없는 `datetime`(현지 시각)이다.
 - 일별 조회는 **조회 기간의 모든 날짜를 행으로 반환**한다(이용자 0명인 날도 0으로). 정렬은 날짜 오름차순이다. 이 규칙은 통합 SP의 일별 분기에도 동일하게 적용한다.
 - 요일은 `iso_weekday tinyint`(월=1 … 일=7)로 반환하고 화면에서 언어별로 표시한다. `DATENAME`은 언어 설정 영향을 받으므로 쓰지 않는다. 계산식: `DATEDIFF(day, '19000101', @d) % 7 + 1`
@@ -653,10 +688,10 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 **백엔드 연결·권한·캐시**
 
-- 각 API는 권한·Site 검사를 마친 후 고정된 논리 조회를 호출한다. 클라이언트가 SP 이름이나 내부 조회 유형을 임의로 지정하는 범용 API는 만들지 않는다.
+- 각 API는 권한·Site 검사를 마친 후 고정된 논리 조회를 호출한다. API의 Site를 서버 설정의 Linked Server·DB·스키마로 해석하고 중앙 연결에서 원격 SP를 실행한다. 클라이언트가 Linked Server·DB·SP 이름이나 내부 조회 유형을 임의로 지정하는 범용 API는 만들지 않는다.
 - `Features.top_users`는 같은 SP의 다른 분기와 달리 `usage.users.view` 권한과 접근 기록이 필요하다. `Users`의 모든 분기도 같은 권한·접근 기록을 적용한다. SP 실행 권한만으로 사용자별 화면 접근을 허용하지 않는다.
 - SP 내부에는 조회 유형별 SELECT와 명시적인 결과 컬럼을 둔다. Provider는 `SP + 조회 유형`에 해당하는 모델로 결과를 검증하고 기존 API 응답으로 변환한다. MockProvider도 같은 논리 조회·응답 계약을 따른다.
-- 캐시와 single-flight 키는 `source + site + SP + 정규화한 전체 파라미터`다. 조회 유형, 단위, 날짜, 대상 ID, 비교 기간, `@top`을 포함한다. 예를 들어 같은 기간의 `Features.list`와 `Features.top_users`가 캐시를 공유하면 안 된다. 기본값과 NULL도 일관되게 정규화한다.
+- 캐시와 single-flight 키는 `source + site + 호출 대상 + 정규화한 전체 파라미터`다. 실데이터의 호출 대상은 Linked Server·DB·스키마·SP이며, mock은 외부 DB 없이 Site와 논리 조회를 구분한다. 조회 유형, 단위, 날짜, 대상 ID, 비교 기간, `@top`을 포함한다. 예를 들어 같은 기간의 `Features.list`와 `Features.top_users`, 또는 서로 다른 Site가 캐시를 공유하면 안 된다. 기본값과 NULL도 일관되게 정규화한다.
 - 로그에는 request_id와 함께 논리 조회, SP 이름, 조회 유형, 소요시간을 남겨 통합 후에도 느린 분기를 식별할 수 있게 한다. 사용자 ID는 기존 접근 기록 정책을 따른다.
 
 ### 13.5 후속 후보 (P2, 현재 8개에 포함하지 않음)
@@ -697,7 +732,9 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 - **통합 SP 계약 검증**: 기존 18개 논리 조회가 모두 API → Provider → SP·조회 유형으로 매핑되는지 확인한다. 조회 유형별 고정 스키마·빈 결과, 필수/조건부 파라미터, 잘못된 유형 거부, `@top` 기본값, 비교 기간 NULL 처리를 검증한다.
 - **통합에 따른 경계 검증**: 같은 SP의 서로 다른 조회 유형·대상·단위가 캐시와 single-flight를 공유하지 않는지, 합산형과 `daily`의 오늘 처리 차이가 유지되는지 확인한다. 권한 없는 기능 상위 사용자 조회는 SP 호출 전에 차단되고, 일반 기능 조회로 내부 유형을 바꿔 우회할 수 없어야 한다.
+- **Linked Server 경로 검증**: 4개 Site가 같은 중앙 연결 설정을 사용하면서 각자의 4부분 SP 이름으로 매핑되는지 확인한다. 권한 없는 Site·등록되지 않은 Site는 DB 호출 전에 거부한다. 설정 식별자 인용과 값 파라미터 바인딩, Site 간 캐시 분리, 한 Site 오류 시 다른 Site로 대체하지 않는 동작을 검증한다.
 - 실제 DB 연결 전에는 SP 결과 fixture와 호출 파라미터로 검증한다. 실제 SP 배포 후에는 담당자가 각 분기의 결과 집합이 하나인지, 스키마가 고정인지, 파라미터 검증과 성능이 계약에 맞는지 확인한다.
+- 실데이터 연결 시 담당자는 실제 앱용 중앙 DB 계정으로 4개 Site의 원격 호출을 검증한다. `RPC OUT`, 로그인 매핑·원격 EXECUTE 권한, 연결/조회 타임아웃, autocommit 호출, Site별 타임존 및 중앙 서버를 통한 동시 조회 부하를 확인한다.
 
 **화면 검증 (화면을 바꿀 때마다)**
 
@@ -728,7 +765,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 - [ ] 설정 창, 기간 선택 팝오버, 상세 패널 등 열리는 요소도 위 조합에서 깨지지 않는다(화면 검증 절차를 따름).
 - [ ] 빠르게 프리셋을 여러 번 클릭해도 마지막 조건의 결과만 표시되고 이전 요청이 취소된다.
 - [ ] README에 실행 방법(mock 모드, mock SSO), 환경변수, 실데이터 연결 순서가 있다.
-- [ ] `docs/CONNECTING_REAL_DATA.md`: Provider 교체 지점, SP 이름 매핑, 접속 설정, 결과 컬럼 검증 방법, 연결 전 체크리스트.
+- [ ] `docs/CONNECTING_REAL_DATA.md`: Provider 교체 지점, 중앙 DB 접속 환경변수, Site별 Linked Server·DB·스키마 및 SP 매핑, 담당자가 구성할 `RPC OUT`·로그인 매핑·원격 권한, 타임아웃·트랜잭션 정책, 결과 컬럼 검증 방법, 연결 전 체크리스트.
 
 ---
 
@@ -786,6 +823,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 | 11 | 배포 환경(서버, 프록시, 도메인)과 브라우저 지원 범위 | 최신 Chrome/Edge |
 | 12 | ~~테마별 라이트/다크 제공 여부~~ | 6종, 라이트 모드만 |
 | 13 | 회사 정책상 AI 코딩 도구 사용 범위(실데이터·접속정보 금지 확인) | 가상 데이터만 사용 |
+| 14 | 중앙 SQL Server의 접속 환경, Site별 Linked Server·원격 DB·스키마, 로그인 매핑 및 원격 호출 설정 | §6의 가상 매핑으로 설계. 실제 접속정보는 문서·저장소에 기록하지 않고 담당자가 연결 시 구성 |
 
 ---
 
