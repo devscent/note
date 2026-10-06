@@ -1,8 +1,9 @@
 # MARS 관리자 웹사이트 요구사항 명세
 
-버전 1.4 · 2026-10-02 · 대상 독자: 구현을 맡을 AI 코딩 에이전트(Claude Code, Codex, Cursor 등), 프로젝트 담당자(검토)
+버전 1.5 · 2026-10-07 · 대상 독자: 구현을 맡을 AI 코딩 에이전트(Claude Code, Codex, Cursor 등), 프로젝트 담당자(검토)
 
 **변경 이력**
+- 1.5 (2026-10-07): 현재 범위 SP 18개를 8개로 통합, 조회 유형별 파라미터·반환 계약 및 API 매핑 정의. API 경로·응답·권한 구분은 유지
 - 1.4 (2026-10-02): 문서 위치를 `docs/`로 이동, 디렉터리 구조를 저장소 루트 기준으로 수정
 - 1.3 (2026-10-02): 날짜 형식 기본값을 자동 → `YYYY-MM-DD`로 변경
 - 1.2 (2026-10-02): §0 작업 규칙 5번(커밋 메시지 한국어) 개정, 6번(화면 확인) 추가, §15 화면 검증 절차 추가
@@ -91,7 +92,7 @@ Browser (React) ──/api──▶ FastAPI ──▶ UsageProvider (인터페�
 
 **백엔드 규칙**
 - 라우터는 Provider 인터페이스만 안다. `MockProvider`와 `MssqlProvider`는 같은 메서드·같은 반환 모델(pydantic)을 갖는다. 실데이터 연결 시 수정 범위는 `MssqlProvider`와 설정뿐이어야 한다.
-- 테이블을 직접 쿼리하지 않고 SP만 호출한다. SP 이름은 `sp_registry` 한 곳에서 관리한다.
+- 테이블을 직접 쿼리하지 않고 SP만 호출한다. `sp_registry` 한 곳에서 논리 조회별 SP 이름, 고정 조회 유형(`@metric`/`@basis`/`@view`), 허용 파라미터와 결과 모델을 관리한다(§13). Provider 메서드는 논리 조회별로 유지하며 여러 메서드가 같은 통합 SP를 호출할 수 있다.
 - pyodbc는 동기이므로 스레드풀에서 실행한다. 쿼리 타임아웃(`SP_TIMEOUT_SECONDS`, 기본 30)을 둔다.
 - **동일 요청 합치기(single-flight)**: 같은 Site·SP·파라미터의 동시 요청은 SP를 한 번만 실행하고 결과를 공유한다.
 - **TTL 캐시**: 오늘을 포함하지 않는 범위는 30분, 오늘을 포함하는 범위는 2분(설정값). 키는 (source, site, SP, 파라미터).
@@ -391,7 +392,7 @@ groups:
 ### 11.2 DAU (P0)
 
 **설명 한 줄**: 그날 MARS 기능 조회를 1회 이상 한 사용자 수.
-**데이터**: `UsageInsights_Dau`. 일별 행에 날짜, 요일, 이용자 수, 휴일 여부, 휴일명이 있다. 규모는 대략 100~150이다.
+**데이터**: `UsageInsights_Daily(@metric='dau')`. 일별 행에 날짜, 요일, 이용자 수, 휴일 여부, 휴일명이 있다. 규모는 대략 100~150이다.
 
 **구성**
 1. 필터: 기간, 휴일 제외 스위치(기본 ON), 7일 이동평균 체크(기본 OFF)
@@ -411,12 +412,12 @@ groups:
 ### 11.3 MAU · WAU (P0)
 
 **설명 한 줄**: 최근 30일(MAU)·7일(WAU) 동안 MARS 기능 조회를 1회 이상 한 사용자 수.
-**데이터**: 롤링 `UsageInsights_ActiveRolling`(기준일별 MAU·WAU 동시), 캘린더 `UsageInsights_ActiveCalendar`(주/월별). MAU는 1000~1500, WAU는 300~500 규모다.
+**데이터**: `UsageInsights_ActiveUsers`의 롤링 `@basis='rolling'`(기준일별 MAU·WAU 동시), 캘린더 `@basis='calendar'` + `@unit='W'/'M'`(주/월별). MAU는 1000~1500, WAU는 300~500 규모다.
 
 **구성**
 1. 필터: 기간, **기준 토글(롤링 | 캘린더)** — 기본 롤링, MAU·WAU 공통 [제안]. 이 화면에는 휴일 제외 옵션이 없다.
 2. **MAU 차트**(메인, 크게)와 **WAU 차트**(작게)를 분리해서 위아래로 배치한다(스케일 차이). 각 차트 위에 카드(평균/최대/최소/최근값/이전 대비)를 둔다. 각각 조회 기간 평균선과 줌을 가진다.
-3. **고착도 차트**(P1, 롤링 기준에서만): DAU÷MAU, WAU÷MAU를 % 선 두 개로 표시한다. 이 차트에만 휴일 제외 토글(기본 ON)을 둔다. DAU는 `UsageInsights_Dau` 결과와 날짜로 결합한다 [제안].
+3. **고착도 차트**(P1, 롤링 기준에서만): DAU÷MAU, WAU÷MAU를 % 선 두 개로 표시한다. 이 차트에만 휴일 제외 토글(기본 ON)을 둔다. DAU는 `UsageInsights_Daily(@metric='dau')` 결과와 날짜로 결합한다 [제안].
 4. **표**: 롤링은 `기준일 | MAU | WAU` 한 표, 캘린더는 월/주 탭 각각의 표다.
 
 **롤링 기준**
@@ -444,7 +445,7 @@ groups:
 
 MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 이용자와 최근 N일 이용자를 함께 보여줘서 실제 이용자 규모를 추정하게 한다. 화면에서는 "가입자" 대신 **"신규 이용자(최초 접속)"** 로 표기한다.
 
-**데이터**: `UsageInsights_UserBase`(누적, 90/180/365일), `UsageInsights_NewUsersDaily`.
+**데이터**: `UsageInsights_UserBase`(누적, 90/180/365일), `UsageInsights_Daily(@metric='new_users')`(일별 신규·누적).
 
 **구성**
 1. **카드 5개** (기준일 = 어제, 휴일 제외와 무관): 누적 이용자 / 최근 365일 / 최근 180일 / 최근 90일 이용자 / 휴면 추정 비율(= 1 − 365일 이용자 ÷ 누적). 각 카드에 누적 대비 %를 표시하고 (?)에 "1년 이상 접속 기록이 없으면 휴면으로 보는 기준이며, 더 엄격한 기준으로 90/180일도 함께 본다"를 설명한다.
@@ -463,7 +464,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 ### 11.5 체류시간 (P0)
 
 **설명 한 줄**: 그날 사용자들의 평균 체류시간. (산출 방식 한 줄은 자리표시 문구로 두고 담당자가 수정: "세션 기준으로 …")
-**데이터**: `UsageInsights_StayTimeDaily`. 일별 평균 체류시간(초), 선택적으로 중앙값(초), 그날의 이용자 수, 휴일 정보.
+**데이터**: `UsageInsights_Daily(@metric='stay_time')`. 일별 평균 체류시간(초), 선택적으로 중앙값(초), 그날의 이용자 수, 휴일 정보.
 
 - DAU 화면과 같은 구성이다: 필터(기간, 휴일 제외 기본 ON, 7일 이동평균), 카드, 평균선이 있는 라인 차트, 줌, 표.
 - 표시 단위는 분(소수 1자리)이며 서식은 `formatDuration` 한 곳에서 관리한다. 기간 평균은 "일별 평균의 단순 평균"이라고 (?)에 밝힌다.
@@ -476,7 +477,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 ### 11.6 기능별 사용현황 (P0)
 
-**데이터**: `UsageInsights_Features`(기능 ID, 이름(ko/en), 사용자 수, 조회 수, 이전 기간 값), `UsageInsights_PeriodSummary`(도달률 분모), 상세용 SP 4종(§13). 기간은 기본 1년이며 오늘은 제외한다(C10).
+**데이터**: `UsageInsights_Features(@view='list')`(기능 ID, 이름(ko/en), 사용자 수, 조회 수, 이전 기간 값), `UsageInsights_PeriodSummary`(도달률 분모). 기능 상세도 같은 `UsageInsights_Features`를 `@view='summary'/'daily'/'departments'/'top_users'`로 호출한다(§13). 기간은 기본 1년이며 기간 합산형 조회에서는 오늘을 제외한다(C10). 상세 일별 조회는 오늘 행을 집계중으로 표시할 수 있다(C7~C9).
 
 **목록 화면**
 - 필터: 기간. 정렬 세그먼트 컨트롤(1클릭 전환): **사용자 수(기본) | 조회 수 | 증감**. 열 머리를 눌러도 정렬된다. [미결: "사용자수 조회수 기준보다 더 중요하다"를 "사용자 수가 조회 수보다 중요"로 해석함]
@@ -500,7 +501,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 ### 11.7 유저별 사용현황 (P0, 권한 `usage.users.view`)
 
-**데이터**: `UsageInsights_Users`(사용자별 사용일수, 조회 수, 사용 메뉴 수), 상세용 SP 3종. 순위는 프론트에서 계산한다(전체 목록 1회 조회 후 정렬 기준 전환 시 재조회 없음).
+**데이터**: `UsageInsights_Users(@view='list')`(사용자별 사용일수, 조회 수, 사용 메뉴 수). 유저 상세도 같은 `UsageInsights_Users`를 `@view='summary'/'daily'/'features'`로 호출한다(§13). 순위는 프론트에서 계산한다(전체 목록 1회 조회 후 정렬 기준 전환 시 재조회 없음).
 
 **순위 화면**
 - 필터: 기간, 정렬 세그먼트 컨트롤 **사용일수(기본) | 조회 수 | 사용 메뉴 수** (중요도 순). 클릭 한 번으로 바뀌고 기준 열이 강조된다.
@@ -543,6 +544,8 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 접두어 `/api/v1`. 모든 엔드포인트는 인증 필수이고 (권한, Site) 검사를 거친다. 조회 파라미터는 `from`, `to`(YYYY-MM-DD)이며 기능/유저 대상은 경로에 둔다.
 
+**API는 기존 구분을 유지한다.** SP는 내부 저장·조회 구현이며 API와 1:1일 필요가 없다. 일별 지표와 상세 영역은 반환 모델·권한·로딩 및 재시도 단위가 다르므로 각 API가 명확한 계약을 갖도록 한다. 특히 기능 상위 사용자 조회는 별도 권한이 필요하다. 내부 SP 통합은 §13의 매핑으로 흡수하며, 클라이언트에 SP 조회 유형을 그대로 노출하는 범용 엔드포인트로 합치지 않는다.
+
 | 메서드 · 경로 | 설명 | 권한 |
 |---|---|---|
 | `GET /me` | 사용자 정보(이름·부서·ID), 유효 권한, 접근 가능 Site, 서버 capabilities(`dataSourceSwitch` 등) | 로그인 |
@@ -562,7 +565,7 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 | `GET /sites/{site}/usage/users` | 유저별 순위(전체 목록) | `usage.users.view` |
 | `GET /sites/{site}/usage/users/{userId}/summary` `/daily` `/features` | 유저 상세 | `usage.users.view` |
 
-- 기간 합산형(features, users, departments, period-summary)은 `to`를 어제로 자른 값으로 SP를 호출하고, 실제 사용한 `to`를 `meta`에 담는다. 이전 기간 비교값은 백엔드가 `compare_from`/`compare_to`를 계산해서 SP에 전달한다.
+- 기간 합산형은 `to`를 어제로 자른 값으로 SP를 호출하고, 실제 사용한 `to`를 `meta`에 담는다. 통합 후에는 SP 이름이 아니라 §13.2의 조회 유형별로 적용하며, 기능·사용자 상세의 `daily` 조회에는 이 자르기를 적용하지 않는다. 기능 목록의 이전 기간 비교값은 백엔드가 `compare_from`/`compare_to`를 계산해서 SP에 전달한다.
 - 프론트에는 `name_i18n`이 적용된 형태로 내려준다. SP 컬럼명 그대로 노출하지 않는다.
 - 클라이언트 요청 헤더 `X-Data-Source: mock|real`은 `ALLOW_DATA_SOURCE_SWITCH=true`이고 `admin` 권한일 때만 유효하다. 아니면 무시한다.
 
@@ -572,43 +575,100 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 
 `docs/SP_SPEC.md`로 정식화하고, 담당자가 실제 SP를 만들 때 기준으로 삼는다. 아래 규칙을 벗어나야 하면 구현 에이전트가 임의로 바꾸지 말고 질문한다.
 
-**공통 규칙**
-- 4개 Site DB에 **같은 이름·같은 파라미터·같은 결과 컬럼**으로 배포한다. Site는 SP 파라미터가 아니라 연결(DB)로 구분한다.
+### 13.1 통합 기준과 반환 원칙
+
+현재 범위의 물리 SP는 **18개 → 8개**로 통합한다. API와 Provider의 논리 조회는 유지하고, 같은 업무 대상·조회 패턴을 다루는 SP에 조회 유형 파라미터를 추가한다.
+
+- 일별 DAU·신규 이용자·체류시간: `UsageInsights_Daily`의 `@metric`으로 구분한다.
+- 롤링·캘린더 활성 이용자: `UsageInsights_ActiveUsers`의 `@basis`로 구분한다.
+- 기능 목록·상세 4종: `UsageInsights_Features`의 `@view`로 구분한다.
+- 사용자 목록·상세 3종: `UsageInsights_Users`의 `@view`로 구분한다.
+- `UserBase`는 한 기준일의 누적·최근 N일 현황, `PeriodSummary`는 임의 기간의 고유 이용자·조회 합계이므로 별도로 유지한다. 부서 집계와 데이터 갱신 정보도 각각 독립된 조회 책임을 유지한다.
+- **호출 한 번은 선택한 조회 유형의 결과 집합 하나만 반환한다.** 선택한 분기만 실행하고, 다른 유형의 데이터까지 계산하거나 여러 결과 집합을 일괄 반환하지 않는다. 화면 영역별 독립 로딩·취소·캐시를 유지한다.
+- **조회 유형에 따라 결과 컬럼은 달라도 되지만, 동일한 SP + 조회 유형의 컬럼명·타입·NULL 허용 여부는 고정한다.** 빈 목록도 같은 컬럼 구조의 0행 결과를 반환한다. 모든 유형을 하나의 넓은 NULL 컬럼 테이블이나 JSON 문자열로 합치지 않는다.
+- 통합은 SP 관리 단위를 줄이는 결정이다. API 요청 수나 DB 실행 횟수가 자동으로 줄어드는 것은 아니다. 성능은 조회 유형별 실행 계획과 응답시간으로 검증한다.
+
+### 13.2 공통 규칙
+
+- 4개 Site DB에 **같은 SP 이름·파라미터·조회 유형별 결과 계약**으로 배포한다. Site는 SP 파라미터가 아니라 연결(DB)로 구분한다.
 - 날짜 파라미터와 결과는 `date` 타입이며 해당 Site 현지 날짜 기준이다. 시각 컬럼은 타임존 없는 `datetime`(현지 시각)이다.
-- 일별 SP는 **조회 기간의 모든 날짜를 행으로 반환**한다(이용자 0명인 날도 0으로). 정렬은 날짜 오름차순이다.
+- 일별 조회는 **조회 기간의 모든 날짜를 행으로 반환**한다(이용자 0명인 날도 0으로). 정렬은 날짜 오름차순이다. 이 규칙은 통합 SP의 일별 분기에도 동일하게 적용한다.
 - 요일은 `iso_weekday tinyint`(월=1 … 일=7)로 반환하고 화면에서 언어별로 표시한다. `DATENAME`은 언어 설정 영향을 받으므로 쓰지 않는다. 계산식: `DATEDIFF(day, '19000101', @d) % 7 + 1`
 - **[H]** 휴일 컬럼 세트: `is_holiday bit NOT NULL`, `holiday_name_ko/en/zh nvarchar(100) NULL`(`_zh`는 예약: 이번 범위에서는 NULL이어도 되며 앱이 쓰지 않는다. 나중에 중국어 UI를 추가할 때 SP 계약을 바꾸지 않기 위함 [제안]). 공휴일 + 회사 휴일을 반영하며, 토·일 여부는 Site 캘린더가 결정한다(SP가 판단).
 - **[N(x)]** 이름 컬럼 세트: `x_name_ko/en/zh nvarchar(200) NULL`(`_zh`는 [H]와 같이 예약). 비어 있으면 앱이 대체 규칙을 적용한다.
 - 카운트는 `int`, 비율은 앱에서 계산한다. 결과 컬럼은 snake_case이다.
-- 오늘 행은 집계중 값으로 반환해도 된다(일별 SP만). 앱이 "집계중"으로 처리한다.
-- 기간 합산형 SP는 앱이 잘라서 준 `@to_date`(어제 이하)까지만 계산한다.
+- 일별·롤링 조회의 오늘 값과 캘린더 조회의 진행 중인 주·월은 집계중 값을 반환할 수 있다. 앱이 집계중 표시와 통계 제외를 적용한다(§9.2, §11.3).
+- 기간 합산형 조회는 앱이 잘라서 준 `@to_date`(어제 이하)까지만 계산한다. **SP 이름이 아니라 조회 유형 기준**으로 적용한다. `Features`의 `list`/`summary`/`departments`/`top_users`, `Users`의 `list`/`summary`/`features`, `Departments`, `PeriodSummary`가 대상이다. `Features`·`Users`의 `daily`는 오늘 행을 허용한다.
+- 조회 유형은 아래에 명시한 값만 허용한다. 필수 파라미터 누락, 알 수 없는 유형, 사용하지 않는 파라미터의 비NULL 값, 잘못된 날짜 범위를 SP에서도 검증하고 오류로 처리한다. 누락된 ID를 전체 조회로 해석하지 않는다.
+- SP는 `SET NOCOUNT ON`을 사용하고, 허용된 유형을 명시적인 분기로 처리한다. 사용자 입력으로 SP 이름·테이블명·SQL 구문을 조합하지 않는다.
 
-**SP 목록**
+### 13.3 SP 목록 (현재 범위: 8개)
 
-| # | SP | 파라미터 | 결과 |
+표의 필수 파라미터에는 기본값을 두지 않는다. 선택 파라미터는 기본 `NULL`이며, 아래 조건부 규칙을 적용한다. 날짜 파라미터는 모두 `date`다.
+
+| # | SP | 필수 파라미터 | 선택 파라미터 | 조회 유형 / 역할 |
+|---|---|---|---|---|
+| 1 | `UsageInsights_Daily` | `@metric varchar(20)`, `@from_date`, `@to_date` | 없음 | `dau`, `new_users`, `stay_time` |
+| 2 | `UsageInsights_ActiveUsers` | `@basis varchar(10)`, `@from_date`, `@to_date` | `@unit char(1)` | `rolling`, `calendar` |
+| 3 | `UsageInsights_UserBase` | `@as_of_date` | 없음 | 기준일(어제)의 누적·최근 90/180/365일 이용자 |
+| 4 | `UsageInsights_PeriodSummary` | `@from_date`, `@to_date` | 없음 | 기간 내 고유 이용자·조회 합계 |
+| 5 | `UsageInsights_Features` | `@view varchar(20)`, `@from_date`, `@to_date` | `@feature_id varchar(50)`, `@compare_from`, `@compare_to`, `@top int` | `list`, `summary`, `daily`, `departments`, `top_users` |
+| 6 | `UsageInsights_Users` | `@view varchar(20)`, `@from_date`, `@to_date` | `@user_id` | `list`, `summary`, `daily`, `features` |
+| 7 | `UsageInsights_Departments` | `@from_date`, `@to_date` | 없음 | 부서별 이용 현황 |
+| 8 | `UsageInsights_Freshness` | 없음 | 없음 | 데이터 집계 기준일·마지막 갱신 시각 |
+
+**조건부 파라미터 규칙**
+
+- `ActiveUsers`: `rolling`이면 `@unit`은 NULL. `calendar`이면 `@unit='W'` 또는 `'M'` 필수. API의 `unit=week/month`를 Provider가 `W/M`으로 변환한다.
+- `Features`: `list`이면 `@feature_id`는 NULL. 나머지 유형은 `@feature_id` 필수.
+- `Features.list`: `@compare_from`/`@compare_to`는 둘 다 유효한 날짜이거나 둘 다 NULL이다. 백엔드가 C18에 따라 이전 기간을 계산하며, 비교 불가능하면 둘 다 NULL로 전달하고 `prev_users`/`prev_views`도 NULL로 반환한다. 다른 유형에서는 비교 파라미터를 둘 다 NULL로 전달한다.
+- `Features.top_users`: `@top`은 양의 정수이며 생략하면 10이다. Provider는 기본값을 적용한 `@top=10`을 전달하고 SP도 NULL이면 10으로 처리한다. 다른 유형에서는 `@top`이 NULL이어야 한다.
+- `Users`: `list`이면 `@user_id`는 NULL. 나머지 유형은 `@user_id` 필수. ID의 SQL 타입·길이는 실제 사용자 ID 계약에 맞춰 `SP_SPEC.md`에서 확정하고 모든 사용자 조회에서 통일한다.
+- `UserBase`: 백엔드가 Site 현지 어제를 `@as_of_date`로 전달한다. 최근 N일의 범위는 `[as_of−N+1, as_of]`다.
+
+### 13.4 조회 유형별 결과와 API 매핑
+
+아래 API 경로는 `/api/v1/sites/{site}/usage` 이후의 경로다. API 경로·응답 모델·권한은 §12를 유지하고, 백엔드가 아래 SP와 조회 유형으로 매핑한다. 표의 파라미터 표기는 조회 유형만 나타내며, 날짜·대상 ID 등은 §13.3에 따라 함께 전달한다.
+
+| SP | 조회 유형 | API (GET) | 결과 컬럼 / 의미 |
 |---|---|---|---|
-| 1 | `UsageInsights_Dau` | `@from_date`, `@to_date` | `stat_date date`, `iso_weekday`, `active_users int`, **[H]** |
-| 2 | `UsageInsights_ActiveRolling` | `@from_date`, `@to_date` | `stat_date`(기준일), `wau_7d int`, `mau_30d int` — 기준일 포함 과거 7/30일 고유 사용자 |
-| 3 | `UsageInsights_ActiveCalendar` | `@unit char(1)`(`W`/`M`), `@from_date`, `@to_date` | `start_date`, `end_date`(주: 월~일, 월: 1일~말일, 진행 중이어도 실제 달력 종료일), `active_users` — 조회 기간과 **겹치는** 기간을 모두 반환 (라벨·포함 규칙은 앱이 처리) |
-| 4 | `UsageInsights_UserBase` | `@as_of_date` (=어제) | `total_users`, `active_90d`, `active_180d`, `active_365d` — 창은 `[as_of−N+1, as_of]` |
-| 5 | `UsageInsights_NewUsersDaily` | `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `new_users`(전체 이력상 처음 접속한 사용자), `cumulative_users`, **[H]** |
-| 6 | `UsageInsights_StayTimeDaily` | `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `avg_stay_sec int`, `median_stay_sec int NULL`, `active_users`, **[H]** |
-| 7 | `UsageInsights_PeriodSummary` | `@from_date`, `@to_date` | `active_users`(기간 내 고유 사용자), `total_views` |
-| 8 | `UsageInsights_Features` | `@from_date`, `@to_date`, `@compare_from`, `@compare_to`(NULL 허용) | `feature_id varchar(50)`, **[N(name)]**, `users`, `views`, `prev_users NULL`, `prev_views NULL` |
-| 9 | `UsageInsights_FeatureSummary` | `@feature_id`, `@from_date`, `@to_date` | `users`, `views`, `first_used_date`, `last_used_date`(전체 이력), `new_users`(기간 내 이 기능을 처음 쓴 사용자), `returning_users` |
-| 10 | `UsageInsights_FeatureDaily` | `@feature_id`, `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `users`, `views`, **[H]** |
-| 11 | `UsageInsights_FeatureDepartments` | `@feature_id`, `@from_date`, `@to_date` | `dept_id`, **[N(dept)]**, `users`, `views` |
-| 12 | `UsageInsights_FeatureTopUsers` | `@feature_id`, `@from_date`, `@to_date`, `@top int` | `user_id`, `user_name`, `dept_id`, **[N(dept)]**, `active_days`, `views` |
-| 13 | `UsageInsights_Departments` | `@from_date`, `@to_date` | `dept_id`, **[N(dept)]**, `active_users`, `views`, `headcount int NULL` |
-| 14 | `UsageInsights_Users` | `@from_date`, `@to_date` | `user_id`, `user_name`, `dept_id NULL`, **[N(dept)]**, `active_days`, `views`, `menus`(사용한 서로 다른 기능 수) — 기간 내 사용 기록이 있는 사용자 전체 |
-| 15 | `UsageInsights_UserSummary` | `@user_id`, `@from_date`, `@to_date` | `user_id`, `user_name`, `dept_id`, **[N(dept)]**, `active_days`, `views`, `menus`, `first_active_date`(전체 이력), `last_active_date`, `longest_streak_days`(기간 내, 휴일은 연속을 끊지 않음) |
-| 16 | `UsageInsights_UserDaily` | `@user_id`, `@from_date`, `@to_date` | `stat_date`, `iso_weekday`, `views`, **[H]** — 기간의 모든 날짜 행 |
-| 17 | `UsageInsights_UserFeatures` | `@user_id`, `@from_date`, `@to_date` | `feature_id`, **[N(name)]**, `active_days`, `views` |
-| 18 | `UsageInsights_Freshness` | 없음 | `data_through_date date`, `last_updated_at datetime` |
-| P2 | `UsageInsights_RetentionCohorts` | `@from_date`, `@to_date`, `@unit` | `cohort_start`, `cohort_size`, `period_offset`, `retained_users` |
-| P2 | `UsageInsights_ActiveDaysDistribution` | `@month_start` | `bucket`, `users` |
+| `UsageInsights_Daily` | `@metric='dau'` | `/dau` | `stat_date date`, `iso_weekday`, `active_users int`, **[H]** |
+| `UsageInsights_Daily` | `@metric='new_users'` | `/new-users/daily` | `stat_date`, `iso_weekday`, `new_users`(전체 이력상 처음 접속한 사용자), `cumulative_users`, **[H]** |
+| `UsageInsights_Daily` | `@metric='stay_time'` | `/stay-time/daily` | `stat_date`, `iso_weekday`, `avg_stay_sec int`, `median_stay_sec int NULL`, `active_users`, **[H]** |
+| `UsageInsights_ActiveUsers` | `@basis='rolling'` | `/active-users/rolling` | `stat_date`(기준일), `wau_7d int`, `mau_30d int` — 기준일 포함 과거 7/30일 고유 사용자 |
+| `UsageInsights_ActiveUsers` | `@basis='calendar'`, `@unit='W'/'M'` | `/active-users/calendar?unit=week\|month` | `start_date`, `end_date`(주: 월~일, 월: 1일~말일, 진행 중이어도 실제 달력 종료일), `active_users` — 조회 기간과 **겹치는** 기간을 모두 반환 (라벨·포함 규칙은 앱이 처리) |
+| `UsageInsights_UserBase` | 없음 | `/user-base/summary` | `total_users`, `active_90d`, `active_180d`, `active_365d` |
+| `UsageInsights_PeriodSummary` | 없음 | `/period-summary` | `active_users`(기간 내 고유 사용자), `total_views` |
+| `UsageInsights_Features` | `@view='list'` | `/features` | `feature_id varchar(50)`, **[N(name)]**, `users`, `views`, `prev_users NULL`, `prev_views NULL` |
+| `UsageInsights_Features` | `@view='summary'` | `/features/{id}/summary` | `users`, `views`, `first_used_date`, `last_used_date`(전체 이력), `new_users`(기간 내 이 기능을 처음 쓴 사용자), `returning_users` |
+| `UsageInsights_Features` | `@view='daily'` | `/features/{id}/daily` | `stat_date`, `iso_weekday`, `users`, `views`, **[H]** |
+| `UsageInsights_Features` | `@view='departments'` | `/features/{id}/departments` | `dept_id`, **[N(dept)]**, `users`, `views` |
+| `UsageInsights_Features` | `@view='top_users'` | `/features/{id}/top-users` | `user_id`, `user_name`, `dept_id`, **[N(dept)]**, `active_days`, `views` |
+| `UsageInsights_Users` | `@view='list'` | `/users` | `user_id`, `user_name`, `dept_id NULL`, **[N(dept)]**, `active_days`, `views`, `menus`(사용한 서로 다른 기능 수) — 기간 내 사용 기록이 있는 사용자 전체 |
+| `UsageInsights_Users` | `@view='summary'` | `/users/{userId}/summary` | `user_id`, `user_name`, `dept_id`, **[N(dept)]**, `active_days`, `views`, `menus`, `first_active_date`(전체 이력), `last_active_date`, `longest_streak_days`(기간 내, 휴일은 연속을 끊지 않음) |
+| `UsageInsights_Users` | `@view='daily'` | `/users/{userId}/daily` | `stat_date`, `iso_weekday`, `views`, **[H]** — 기간의 모든 날짜 행 |
+| `UsageInsights_Users` | `@view='features'` | `/users/{userId}/features` | `feature_id`, **[N(name)]**, `active_days`, `views` |
+| `UsageInsights_Departments` | 없음 | `/departments` | `dept_id`, **[N(dept)]**, `active_users`, `views`, `headcount int NULL` |
+| `UsageInsights_Freshness` | 없음 | `/freshness` | `data_through_date date`, `last_updated_at datetime` |
 
-`docs/SP_SPEC.md`에는 각 SP의 결과 컬럼(타입, NULL 여부, 정렬)과 함께 샘플 결과 3~5행, 예외 규칙, 성능 유의점(인덱스 후보)을 채운다.
+**백엔드 연결·권한·캐시**
+
+- 각 API는 권한·Site 검사를 마친 후 고정된 논리 조회를 호출한다. 클라이언트가 SP 이름이나 내부 조회 유형을 임의로 지정하는 범용 API는 만들지 않는다.
+- `Features.top_users`는 같은 SP의 다른 분기와 달리 `usage.users.view` 권한과 접근 기록이 필요하다. `Users`의 모든 분기도 같은 권한·접근 기록을 적용한다. SP 실행 권한만으로 사용자별 화면 접근을 허용하지 않는다.
+- SP 내부에는 조회 유형별 SELECT와 명시적인 결과 컬럼을 둔다. Provider는 `SP + 조회 유형`에 해당하는 모델로 결과를 검증하고 기존 API 응답으로 변환한다. MockProvider도 같은 논리 조회·응답 계약을 따른다.
+- 캐시와 single-flight 키는 `source + site + SP + 정규화한 전체 파라미터`다. 조회 유형, 단위, 날짜, 대상 ID, 비교 기간, `@top`을 포함한다. 예를 들어 같은 기간의 `Features.list`와 `Features.top_users`가 캐시를 공유하면 안 된다. 기본값과 NULL도 일관되게 정규화한다.
+- 로그에는 request_id와 함께 논리 조회, SP 이름, 조회 유형, 소요시간을 남겨 통합 후에도 느린 분기를 식별할 수 있게 한다. 사용자 ID는 기존 접근 기록 정책을 따른다.
+
+### 13.5 후속 후보 (P2, 현재 8개에 포함하지 않음)
+
+리텐션과 월 사용일수 분포는 집계 축과 입력 계약이 달라 별도 후보로 유지한다. 이번에는 명세만 정의하며 실제 SP 구현 대상이 아니다.
+
+| SP | 파라미터 | 결과 |
+|---|---|---|
+| `UsageInsights_RetentionCohorts` | `@from_date`, `@to_date`, `@unit` | `cohort_start`, `cohort_size`, `period_offset`, `retained_users` |
+| `UsageInsights_ActiveDaysDistribution` | `@month_start` | `bucket`, `users` |
+
+`docs/SP_SPEC.md`에는 **SP + 조회 유형별로** 결과 컬럼(타입, NULL 여부, 정렬), 샘플 결과 3~5행, 빈 결과·잘못된 파라미터 처리, 성능 유의점(인덱스 후보)을 채운다. 물리 SP가 8개여도 기존 18개 논리 조회의 계약과 검증 범위는 유지한다.
 
 ---
 
@@ -634,6 +694,10 @@ MARS는 가입 개념이 없어 "가입자"를 직접 구할 수 없다. 누적 
 **프론트 단위 테스트 (Vitest)**: 날짜 유틸(프리셋, 월말 보정, 윤년, ISO 주 라벨·연도 경계), 날짜 표시 형식(3종 서식·입력 해석·잘못된 입력 거부·자동 매핑), 기간 팝오버(적용 전에는 조회하지 않음, 이전/다음 기간 경계), 기간 포함 규칙(§11.3), 통계(오늘·휴일 제외, 빈 데이터, 최대·최소 날짜), 이동평균, 휴일 제외 시리즈 생성(방식 B), 순위 계산(동점·공동 순위), URL 상태 직렬화/복원, 이름 대체 규칙, CSV 생성(BOM), 이전 기간 계산.
 
 **백엔드 테스트 (pytest)**: 모든 엔드포인트의 권한 × Site 매트릭스, 파라미터 검증, 오늘 계산(Site 타임존), 기간 합산형의 `to` 자르기, single-flight·캐시·타임아웃 매핑, 가상 데이터 불변조건, Provider 인터페이스 계약 테스트(Mock과 Mssql이 같은 스키마를 반환하는지, Mssql은 SP 결과를 흉내낸 fixture로 검증).
+
+- **통합 SP 계약 검증**: 기존 18개 논리 조회가 모두 API → Provider → SP·조회 유형으로 매핑되는지 확인한다. 조회 유형별 고정 스키마·빈 결과, 필수/조건부 파라미터, 잘못된 유형 거부, `@top` 기본값, 비교 기간 NULL 처리를 검증한다.
+- **통합에 따른 경계 검증**: 같은 SP의 서로 다른 조회 유형·대상·단위가 캐시와 single-flight를 공유하지 않는지, 합산형과 `daily`의 오늘 처리 차이가 유지되는지 확인한다. 권한 없는 기능 상위 사용자 조회는 SP 호출 전에 차단되고, 일반 기능 조회로 내부 유형을 바꿔 우회할 수 없어야 한다.
+- 실제 DB 연결 전에는 SP 결과 fixture와 호출 파라미터로 검증한다. 실제 SP 배포 후에는 담당자가 각 분기의 결과 집합이 하나인지, 스키마가 고정인지, 파라미터 검증과 성능이 계약에 맞는지 확인한다.
 
 **화면 검증 (화면을 바꿀 때마다)**
 
